@@ -1,5 +1,4 @@
 import os
-import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from config import settings
 from services.s3_client import get_s3_client
@@ -8,58 +7,56 @@ from services.task_manager import task_manager, TaskStatus
 
 
 def upload_file(
-    file_content: bytes,
+    file_path: str,
     original_filename: str,
     key: str,
     bucket: str,
+    file_size: int,
     content_type: str | None = None,
 ) -> dict:
-    file_size = len(file_content)
-
     if file_size > settings.max_upload_size:
         raise FileTooLargeError(file_size, settings.max_upload_size)
 
     if file_size < settings.multipart_threshold:
-        return _upload_small(file_content, key, bucket, content_type)
+        return _upload_small(file_path, key, bucket, content_type)
     else:
-        return _prepare_large_upload(file_content, original_filename, key, bucket, content_type)
+        return _prepare_large_upload(file_path, original_filename, key, bucket, file_size, content_type)
 
 
-def _upload_small(file_content: bytes, key: str, bucket: str, content_type: str | None) -> dict:
+def _upload_small(file_path: str, key: str, bucket: str, content_type: str | None) -> dict:
     s3 = get_s3_client()
     extra_args = {}
     if content_type:
         extra_args["ContentType"] = content_type
-    resp = s3.put_object(Bucket=bucket, Key=key, Body=file_content, **extra_args)
+    with open(file_path, "rb") as f:
+        resp = s3.put_object(Bucket=bucket, Key=key, Body=f, **extra_args)
+    file_size = os.path.getsize(file_path)
     return {
         "status": "completed",
         "key": key,
         "bucket": bucket,
-        "size": len(file_content),
+        "size": file_size,
         "etag": resp.get("ETag", ""),
     }
 
 
 def _prepare_large_upload(
-    file_content: bytes,
+    file_path: str,
     original_filename: str,
     key: str,
     bucket: str,
+    file_size: int,
     content_type: str | None,
 ) -> dict:
-    os.makedirs(settings.upload_temp_dir, exist_ok=True)
-    task_id = uuid.uuid4().hex
-    file_path = os.path.join(settings.upload_temp_dir, f"{task_id}-{original_filename}")
-    with open(file_path, "wb") as f:
-        f.write(file_content)
+    task_id = os.path.basename(file_path).split("-", 1)[0]
     part_size = settings.part_size
-    total_parts = (len(file_content) + part_size - 1) // part_size
+    total_parts = (file_size + part_size - 1) // part_size
     return {
         "status": "processing",
         "task_id": task_id,
         "key": key,
         "bucket": bucket,
-        "total_size": len(file_content),
+        "total_size": file_size,
         "part_size": part_size,
         "total_parts": total_parts,
     }

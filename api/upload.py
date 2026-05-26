@@ -1,6 +1,7 @@
 import os
+import uuid
 import threading
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from botocore.exceptions import ClientError as S3ClientError
 from config import settings
 from services.uploader import upload_file, execute_multipart_upload, FileTooLargeError
@@ -31,7 +32,6 @@ def _start_multipart_in_thread(task_id: str, key: str, bucket: str,
                                file_path: str, file_size: int,
                                part_size: int, total_parts: int,
                                content_type: str | None):
-    """在新线程中执行分片上传，避免阻塞 FastAPI 事件循环。"""
     t = threading.Thread(
         target=execute_multipart_upload,
         args=(task_id, key, bucket, file_path, file_size,
@@ -39,6 +39,25 @@ def _start_multipart_in_thread(task_id: str, key: str, bucket: str,
         daemon=True,
     )
     t.start()
+
+
+async def _save_to_temp(file: UploadFile) -> tuple[str, str, int]:
+    """流式写入临时文件，返回 (file_path, original_filename, file_size)。"""
+    os.makedirs(settings.upload_temp_dir, exist_ok=True)
+    task_id = uuid.uuid4().hex
+    filename = file.filename or "unknown"
+    file_path = os.path.join(settings.upload_temp_dir, f"{task_id}-{filename}")
+    file_size = 0
+    with open(file_path, "wb") as f:
+        while chunk := await file.read(81920):
+            f.write(chunk)
+            file_size += len(chunk)
+    return file_path, filename, file_size
+
+
+def _remove_temp(file_path: str):
+    if os.path.exists(file_path):
+        os.remove(file_path)
 
 
 @router.post("/upload", response_model=ApiResponse)
@@ -59,28 +78,32 @@ async def upload(
     if not bucket:
         raise HTTPException(status_code=400, detail="bucket 未配置")
 
-    content = await file.read()
+    # 流式写入临时文件（不占内存）
+    file_path, original_filename, file_size = await _save_to_temp(file)
 
     try:
-        result = upload_file(content, file.filename or "unknown", key, bucket, content_type or None)
+        result = upload_file(file_path, original_filename, key, bucket, file_size, content_type or None)
     except FileTooLargeError as e:
+        _remove_temp(file_path)
         return ApiResponse(code=40002, message=str(e))
     except S3ClientError as e:
+        _remove_temp(file_path)
         return _map_s3_error(e)
     except Exception as e:
+        _remove_temp(file_path)
         return ApiResponse(code=50001, message=str(e))
 
     if result["status"] == "completed":
+        _remove_temp(file_path)
         return ApiResponse(data=result)
     else:
-        # 大文件：启动后台线程执行分片上传
+        # 大文件：后台线程接管 file_path 的生命周期
         _start_multipart_in_thread(
             task_id=result["task_id"],
             key=key,
             bucket=bucket,
-            file_path=os.path.join(settings.upload_temp_dir,
-                                   f"{result['task_id']}-{file.filename or 'unknown'}"),
-            file_size=result["total_size"],
+            file_path=file_path,
+            file_size=file_size,
             part_size=result["part_size"],
             total_parts=result["total_parts"],
             content_type=content_type or None,
