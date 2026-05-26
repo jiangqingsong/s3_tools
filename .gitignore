@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+.idea/
+*.s3checkpoint
+/tmp/
+*.egg-info/
+dist/
+build/
