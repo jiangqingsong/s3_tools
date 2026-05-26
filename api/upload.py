@@ -33,6 +33,10 @@ async def upload(
 ):
     if not key or not key.strip():
         raise HTTPException(status_code=400, detail="key 不能为空")
+    key = key.strip()
+    if key.endswith("/"):
+        filename = file.filename or "unknown"
+        key = key + filename
     bucket = (bucket or settings.s3_bucket).strip()
     if not bucket:
         raise HTTPException(status_code=400, detail="bucket 未配置")
