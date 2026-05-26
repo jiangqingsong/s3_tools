@@ -59,7 +59,7 @@ def download(
         headers["Content-Range"] = result["content_range"]
 
     return StreamingResponse(
-        result["body"].iter_chunks(),
+        result["body"].iter_chunks(chunk_size=81920),
         status_code=status_code,
         headers=headers,
         media_type=result["content_type"],
