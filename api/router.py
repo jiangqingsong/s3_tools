@@ -1,8 +1,11 @@
 from fastapi import APIRouter
 from services.s3_client import get_s3_client
 from config import settings
+from api.upload import router as upload_router
 
 router = APIRouter(prefix="/api/v1")
+
+router.include_router(upload_router)
 
 
 @router.get("/health")
