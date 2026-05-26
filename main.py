@@ -1,3 +1,4 @@
+import threading
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from api.router import router
@@ -5,16 +6,21 @@ from services.s3_client import get_s3_client
 from config import settings
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # 启动时：校验 S3 连通性
+def check_s3_on_startup():
+    """在后台线程中校验 S3 连通性，不阻塞启动。"""
     try:
         s3 = get_s3_client()
         if settings.s3_bucket:
             s3.head_bucket(Bucket=settings.s3_bucket)
+        print("[INFO] S3 连通性检查通过")
     except Exception as e:
         print(f"[WARN] S3 连通性检查失败: {e}")
-        print("[WARN] 服务将继续启动，但 S3 操作可能不可用")
+        print("[WARN] 服务已启动，但 S3 操作可能不可用")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    threading.Thread(target=check_s3_on_startup, daemon=True).start()
     yield
 
 
