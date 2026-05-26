@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     s3_bucket: str = ""
     s3_use_ssl: bool = True
     s3_path_style: bool = False
+    s3_verify_ssl: bool = True
     s3_signature_version: str = "s3v4"
 
     # 上传配置

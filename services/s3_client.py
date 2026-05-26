@@ -25,6 +25,7 @@ def get_s3_client() -> boto3.client:
             "s3",
             endpoint_url=settings.s3_endpoint,
             use_ssl=settings.s3_use_ssl,
+            verify=settings.s3_verify_ssl,
             config=boto_config,
         )
     return _client
