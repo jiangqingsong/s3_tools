@@ -173,4 +173,4 @@ Phase 1 → Phase 2 → Phase 3 → Phase 4 严格串行：
 
 ---
 
-Phase 1 已完成，详情参见 [DESIGN.md](./DESIGN.md#6-api接口文档)。
+开发完成。全部 API 详见 [DESIGN.md](./DESIGN.md#65-接口汇总)。

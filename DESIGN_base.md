@@ -114,7 +114,8 @@ S3_SECRET_KEY        # 私钥
 S3_REGION            # 区域，默认 us-east-1
 S3_BUCKET            # 默认 Bucket（可通过请求参数覆盖）
 S3_USE_SSL           # 是否使用 SSL，默认 true
-S3_PATH_STYLE        # 是否强制 Path-Style 访问，默认 false（MinIO 建议开 true）
+S3_VERIFY_SSL        # 是否校验 SSL 证书，默认 true。自签名证书需设为 false
+S3_PATH_STYLE        # 是否强制 Path-Style 访问，默认 false。S3 compatible storage 通常需设为 true
 S3_SIGNATURE_VERSION # 签名版本，默认 s3v4
 
 # === 上传配置（选填）===

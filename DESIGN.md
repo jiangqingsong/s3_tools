@@ -136,7 +136,8 @@ S3_SECRET_KEY        # 私钥
 S3_REGION            # 区域，默认 us-east-1
 S3_BUCKET            # 默认 Bucket（可通过请求参数覆盖）
 S3_USE_SSL           # 是否使用 SSL，默认 true
-S3_PATH_STYLE        # 是否强制 Path-Style 访问，默认 false（MinIO 建议开 true）
+S3_VERIFY_SSL        # 是否校验 SSL 证书，默认 true。自签名证书需设为 false
+S3_PATH_STYLE        # 是否强制 Path-Style 访问，默认 false。S3 compatible storage 通常需设为 true
 S3_SIGNATURE_VERSION # 签名版本，默认 s3v4
 
 # === 上传配置（选填）===
@@ -170,6 +171,7 @@ class Settings(BaseSettings):
     s3_region: str = "us-east-1"
     s3_bucket: str = ""
     s3_use_ssl: bool = True
+    s3_verify_ssl: bool = True
     s3_path_style: bool = False
     s3_signature_version: str = "s3v4"
     upload_temp_dir: str = "/tmp/s3-tools"
@@ -485,6 +487,9 @@ Headers:
     "s3_bucket": "my-bucket",
     "s3_access_key": "AKID**** (已设置)",
     "s3_secret_key": "**** (已设置)",
+    "s3_use_ssl": true,
+    "s3_verify_ssl": true,
+    "s3_path_style": false,
     "upload_temp_dir": "/tmp/s3-tools",
     "multipart_threshold": 8388608,
     "part_size": 16777216,
@@ -537,20 +542,24 @@ Headers:
 | GET | `/api/v1/health` | 健康检查 |
 | GET | `/api/v1/config/check` | 配置检查（脱敏） |
 
-## 7. 待讨论问题
+## 7. 已确认决策
 
-1. **上传模式**：当前设计是用户先把文件完整传到 API，API 再后台传到 S3。对于超大文件，用户→API 的传输本身可能中断。是否需要提供"用户端分片续传到 API"的能力，还是认为这个场景由客户端自行处理 HTTP 重试即可？
+| # | 问题 | 决策 |
+|---|------|------|
+| 1 | 用户→API 上传中断 | 客户端自行处理，API 不处理此场景 |
+| 2 | 上传同步/异步策略 | 小文件同步，大文件异步 |
+| 3 | 域名风格 | S3 compatible storage，`S3_PATH_STYLE` 和 `S3_VERIFY_SSL` 可配 |
+| 4 | API 鉴权 | 内网部署，无需鉴权 |
+| 5 | 进度推送 | 仅轮询 `GET /status/{task_id}`，不需 WebSocket |
+| 6 | 多实例部署 | 当前仅单实例 |
 
-2. **同步 vs 异步**：当前设计小文件同步返回（等 S3 写入完成）、大文件异步返回（202 + task_id）。这个策略 OK 吗？还是所有上传统一走异步？
+## 8. S3 Compatible Storage 部署备忘
 
-3. **域名风格**：你使用的 S3 兼容存储是否需要强制 Path-Style？影响 `botocore` 的 `addressing_style` 配置。
+使用自建 S3 服务（如 MinIO 等）时，常见的三个配置：
 
-4. **API 鉴权**：API 服务本身是否需要鉴权（API Key / Token），还是部署在内网无需认证？
-
-5. **进度推送**：除了轮询 `GET /status/{task_id}`，是否需要 WebSocket 推送进度？
-
-6. **多实例部署**：如果需要多副本部署，Checkpoint 和临时文件需要改为共享存储（如 NFS）或改用 Redis。当前单实例是否满足需求？
-
----
-
-请基于以上方案提出你的意见和调整方向，对齐后我输出开发计划。
+| 问题 | 现象 | 配置 |
+|------|------|------|
+| 服务启动卡住 | Waiting for application startup 一直不结束 | 已修：S3 检查改为后台线程 + 5s 超时 |
+| SSL 证书错误 | certificate verify failed | `S3_VERIFY_SSL=false` |
+| 连不上 S3 | could not connect to endpoint URL | `S3_PATH_STYLE=true` |
+| HTTP 连接 | — | `S3_ENDPOINT=http://xxx:8060/` + `S3_USE_SSL=false` |
